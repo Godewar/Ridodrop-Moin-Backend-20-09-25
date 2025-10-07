@@ -13,7 +13,8 @@ const {
   updateBookingStep,
   completeBooking,
   getOrderHistory,
-  collectCash
+  collectCash,
+  saveDropLocation
 } = require("../controllers/bookingController");
 const multer = require("../utils/multerConfig");
 const auth = require("../middlewares/auth");
@@ -28,6 +29,9 @@ router.post(
 // router.get("/:id", auth, getBooking);
 // router.put("/:id", auth, updateBooking);
 // router.get("/", auth, listBookings);
+
+// Create booking without auth
+router.post("/create", multer.fields([{ name: "productImages", maxCount: 4 }]), createBooking);
 
 // // Save from address before order
 router.post("/save-from-address", saveFromAddress);
@@ -59,5 +63,8 @@ router.get("/order-history", getOrderHistory);
 // Add this route for image upload
 router.post('/upload-image/:id', multer.single('image'), uploadBookingImage);
 router.patch("/collect-cash/:id", collectCash);
+
+// Drop location route
+router.post("/drop-location", auth, saveDropLocation);
 
 module.exports = router;

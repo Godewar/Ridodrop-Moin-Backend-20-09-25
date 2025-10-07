@@ -3,6 +3,8 @@ const Rider = require("../models/RiderSchema");
 
 exports.createBooking = async (req, res) => {
   try {
+    console.log("Create booking request body:", req.body);
+    
     // Destructure all relevant fields from the request body
     const {
       userId,
@@ -14,11 +16,21 @@ exports.createBooking = async (req, res) => {
       vehicleType,
       price,
       fromAddress,
-      dropLocation
+      dropLocation,
+      bookingStatus = "pending",
+      status = "pending",
+      currentStep = "0",
+      cashCollected = false
     } = req.body;
 
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({ message: "userId is required" });
+    }
+    if (!vehicleType) {
+      return res.status(400).json({ message: "vehicleType is required" });
+    }
 
-    console.log(req.body, "Booking FIiiiii")
     // Handle stops array
     let stopsArray = [];
     if (stops) {
@@ -37,27 +49,51 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ message: "Maximum 4 product images allowed" });
     }
 
-    // Build the booking object
+    // Ensure dropLocation has proper coordinate structure
+    let processedDropLocation = [];
+    if (dropLocation && Array.isArray(dropLocation)) {
+      processedDropLocation = dropLocation.map(drop => ({
+        address: drop.address || drop.Address || drop.Address1 || '',
+        latitude: drop.latitude || 0,
+        longitude: drop.longitude || 0,
+        Address: drop.Address || drop.address,
+        Address1: drop.Address1 || drop.address,
+        Address2: drop.Address2 || '',
+        landmark: drop.landmark || '',
+        pincode: drop.pincode || '',
+        ReciversName: drop.ReciversName || drop.receiverName || '',
+        ReciversMobileNum: drop.ReciversMobileNum || drop.receiverMobile || '',
+        professional: drop.professional || drop.tag || ''
+      }));
+    }
+
+    // Build the booking object with exact structure you want
     const bookingData = {
       userId,
-      amountPay,
-      payFrom,
-      pickup,
-      dropoff,
+      amountPay: amountPay || "0",
+      bookingStatus,
+      payFrom: payFrom || "drop",
       stops: stopsArray,
       vehicleType,
       productImages,
-      price,
-      fromAddress,
-      dropLocation
+      status,
+      price: price ? Number(price) : 0,
+      dropLocation: processedDropLocation,
+      fromAddress: fromAddress || null,
+      currentStep,
+      cashCollected
     };
+
+    console.log("Creating booking with data:", bookingData);
 
     // Create and save the booking
     const booking = new Booking(bookingData);
     await booking.save();
 
+    console.log("Booking created successfully:", booking._id);
     res.status(201).json(booking);
   } catch (err) {
+    console.error("Booking creation error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
@@ -780,5 +816,63 @@ exports.collectCash = async (req, res) => {
     res.json({ message: 'Cash collected', booking });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+// Save drop location data - Following SaveFromAddress pattern
+exports.saveDropLocation = async (req, res) => {
+  try {
+    const {
+      userId,
+      selectedAddress,
+      selectedLocation,
+      pickupAddress,
+      pickupLocation,
+      midStops,
+      dropDetails,
+      address,
+      latitude,
+      longitude,
+      house,
+      receiverName,
+      receiverMobile,
+      tag,
+      landmark,
+      pincode,
+      useMyNumber,
+      saveAs,
+      userPhoneNumber
+    } = req.body;
+
+    console.log(req.body, "SaveDropLocation data");
+
+    // Create booking with dropLocation data following SaveFromAddress pattern
+    const booking = new Booking({
+      userId,
+      dropLocation: [{
+        // Support both new mobile app structure and legacy structure
+        address: selectedAddress || address,
+        latitude: selectedLocation?.latitude || latitude,
+        longitude: selectedLocation?.longitude || longitude,
+        house: house,
+        receiverName: dropDetails?.receiverName || receiverName,
+        receiverMobile: dropDetails?.receiverNumber || receiverMobile,
+        tag: dropDetails?.saveAs || tag,
+        landmark: dropDetails?.landmark || landmark,
+        pincode: dropDetails?.pincode || pincode,
+        useMyNumber: dropDetails?.useMyNumber || useMyNumber,
+        userPhoneNumber: dropDetails?.userPhoneNumber || userPhoneNumber,
+        // Additional mobile app fields
+        pickupAddress,
+        pickupLocation,
+        midStops: midStops || []
+      }]
+    });
+    
+    await booking.save();
+    return res.status(200).json({ success: true, booking });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Failed to save drop location." });
   }
 };

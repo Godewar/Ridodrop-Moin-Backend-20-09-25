@@ -27,12 +27,16 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    driver: { type: mongoose.Schema.Types.ObjectId, ref: "RaiderSchema" },
+    
     rider: { type: String },
+
 
     stops: [{ type: String, maxlength: 4 }],
     vehicleType: {
       type: String,
-      enum: ["2wheeler", "3wheeler", "truck"],
+      enum: ["2wheeler", "3wheeler", "truck", "bike", "auto", "pickup"],
       // required: true,
     },
     productImages: [{ type: String }],
@@ -48,12 +52,13 @@ const bookingSchema = new mongoose.Schema(
     dropLocation: [
       {
         Address: { type: String },
-        Address1: { type: String },
-        Address2: { type: String },
+        address: { type: String }, // New single address field
+        Address1: { type: String }, // Keep for backward compatibility
+        Address2: { type: String }, // Keep for backward compatibility
         landmark: { type: String },
         pincode: { type: String },
-        ReciversName: { type: String },
-        ReciversMobileNum: { type: String },
+        receiverName: { type: String },
+        receiverNumber: { type: String },
         professional: { type: String },
         latitude: { type: Number, required: true },
         longitude: { type: Number, required: true },

@@ -4,10 +4,9 @@ const path = require("path");
 
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
-
-    console.log(user);
-    res.json(user);
+    // req.user is already the complete user object from auth middleware
+    console.log('User profile:', req.user);
+    res.json(req.user);
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
@@ -15,7 +14,7 @@ exports.getProfile = async (req, res) => {
 
 exports.createUser = async (req, res) => {
   try {
-    const { name, lname, email, phone, gender, role } = req.body;
+    const { name, lname, phone, gender, role } = req.body;
 
     // Check if user already exists by phone
     const existingUser = await User.findOne({ phone });
@@ -32,14 +31,20 @@ exports.createUser = async (req, res) => {
       profilePhoto = `${req.protocol}://${req.get("host")}/${filePath}`;
     }
 
+    // Generate unique customerId and referralCode
+    const customerId = `CUST${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const referralCode = `REF${Date.now()}${Math.floor(Math.random() * 10000)}`;
+
     const newUser = new User({
       name,
       lname,
-      email,
+      // Email field removed to avoid database index issues
       phone,
       gender,
       role,
       profilePhoto,
+      customerId,
+      referralCode,
     });
 
     await newUser.save();
