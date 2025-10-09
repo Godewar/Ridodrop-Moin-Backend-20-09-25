@@ -1,5 +1,6 @@
 const Booking = require("../models/Booking");
 const Rider = require("../models/RiderSchema");
+const User = require("../models/User");
 
 exports.createBooking = async (req, res) => {
   try {
@@ -974,44 +975,128 @@ exports.getAvailableBookingsForDriver = async (req, res) => {
   }
 };
 
+// exports.getOngoingBookingForRider = async (req, res) => {
+//   try {
+//     const { riderId, phone } = req.query;
+
+
+//     let riderQuery = {};
+
+//     if (riderId) {
+//       riderQuery.rider = riderId;
+//     } else if (phone) {
+//       // Find rider by phone
+//       const rider = await Rider.findOne({ phone });
+//       if (!rider) return res.status(404).json({ message: 'Rider not found' });
+//       riderQuery.rider = rider._id;
+//     } else {
+//       return res.status(400).json({ message: 'riderId or phone required' });
+//     }
+//     // Find ongoing booking
+//     const booking = await Booking.findOne({
+//       ...riderQuery,
+//       $or: [
+//         { status: { $in: ['accepted', 'in_progress'] } },
+//       ]
+//     });
+
+
+//     // console.log(booking, "ssswwwwwwwwwwwwwwww")
+//     if (!booking) return res.status(404).json({ message: 'No ongoing booking found' });
+
+//     // Manually fetch customer and rider
+//     const customer = booking.userId ? await require('../models/User').findById(booking.userId) : null;
+//     const bookingObj = booking.toObject();
+//     bookingObj.customer = customer;
+
+
+//     res.json(bookingObj);
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
 exports.getOngoingBookingForRider = async (req, res) => {
   try {
     const { riderId, phone } = req.query;
 
+    console.log("🔍 getOngoingBookingForRider called with:", { riderId, phone });
 
     let riderQuery = {};
 
     if (riderId) {
       riderQuery.rider = riderId;
+      console.log("📞 Using riderId:", riderId);
     } else if (phone) {
       // Find rider by phone
+      console.log("📞 Looking up rider by phone:", phone);
       const rider = await Rider.findOne({ phone });
-      if (!rider) return res.status(404).json({ message: 'Rider not found' });
+      if (!rider) {
+        console.log("❌ Rider not found for phone:", phone);
+        return res.status(404).json({ message: 'Rider not found' });
+      }
+      console.log("✅ Found rider:", rider._id);
       riderQuery.rider = rider._id;
     } else {
+      console.log("❌ No riderId or phone provided");
       return res.status(400).json({ message: 'riderId or phone required' });
     }
-    // Find ongoing booking
-    const booking = await Booking.findOne({
-      ...riderQuery,
-      $or: [
-        { status: { $in: ['accepted', 'in_progress'] } },
-      ]
-    });
 
+    console.log("🔍 Searching for ongoing booking with query:", riderQuery);
 
-    // console.log(booking, "ssswwwwwwwwwwwwwwww")
-    if (!booking) return res.status(404).json({ message: 'No ongoing booking found' });
+    // Find ongoing booking with better error handling
+    let booking;
+    try {
+      booking = await Booking.findOne({
+        ...riderQuery,
+        $or: [
+          { status: { $in: ['accepted', 'in_progress'] } },
+        ]
+      });
+    } catch (bookingErr) {
+      console.error("❌ Database error while searching for booking:", bookingErr);
+      throw new Error(`Database error: ${bookingErr.message}`);
+    }
 
-    // Manually fetch customer and rider
-    const customer = booking.userId ? await require('../models/User').findById(booking.userId) : null;
+    console.log("📋 Found booking:", booking ? booking._id : "None");
+
+    if (!booking) {
+      console.log("⚠️ No ongoing booking found");
+      return res.status(404).json({ message: 'No ongoing booking found' });
+    }
+
+    // Manually fetch customer using the fixed User import
+    let customer = null;
+    if (booking.userId) {
+      try {
+        console.log("🔍 Looking up customer with userId:", booking.userId);
+        customer = await User.findById(booking.userId);
+        console.log("👤 Customer lookup result:", customer ? `Found: ${customer.name || customer.phone || customer._id}` : "Not found");
+      } catch (userErr) {
+        console.log("⚠️ Error fetching customer:", userErr.message);
+        // Continue without customer data - this is not critical
+        customer = null;
+      }
+    } else {
+      console.log("ℹ️ No userId in booking, skipping customer lookup");
+    }
+
     const bookingObj = booking.toObject();
-    bookingObj.customer = customer;
+    if (customer) {
+      bookingObj.customer = customer;
+    }
 
-
+    console.log("✅ Returning ongoing booking with data:", {
+      bookingId: bookingObj._id,
+      status: bookingObj.status,
+      hasCustomer: !!customer,
+      rider: bookingObj.rider
+    });
+    
     res.json(bookingObj);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ Error in getOngoingBookingForRider:", err);
+    res.status(500).json({ message: err.message, error: "Internal server error" });
   }
 };
 
