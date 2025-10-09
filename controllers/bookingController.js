@@ -1016,6 +1016,91 @@ exports.getAvailableBookingsForDriver = async (req, res) => {
 //   }
 // };
 
+// exports.getOngoingBookingForRider = async (req, res) => {
+//   try {
+//     const { riderId, phone } = req.query;
+
+//     console.log("🔍 getOngoingBookingForRider called with:", { riderId, phone });
+
+//     let riderQuery = {};
+
+//     if (riderId) {
+//       riderQuery.rider = riderId;
+//       console.log("📞 Using riderId:", riderId);
+//     } else if (phone) {
+//       // Find rider by phone
+//       console.log("📞 Looking up rider by phone:", phone);
+//       const rider = await Rider.findOne({ phone });
+//       if (!rider) {
+//         console.log("❌ Rider not found for phone:", phone);
+//         return res.status(404).json({ message: 'Rider not found' });
+//       }
+//       console.log("✅ Found rider:", rider._id);
+//       riderQuery.rider = rider._id;
+//     } else {
+//       console.log("❌ No riderId or phone provided");
+//       return res.status(400).json({ message: 'riderId or phone required' });
+//     }
+
+//     console.log("🔍 Searching for ongoing booking with query:", riderQuery);
+
+//     // Find ongoing booking with better error handling
+//     let booking;
+//     try {
+//       booking = await Booking.findOne({
+//         ...riderQuery,
+//         $or: [
+//           { status: { $in: ['accepted', 'in_progress'] } },
+//         ]
+//       });
+//     } catch (bookingErr) {
+//       console.error("❌ Database error while searching for booking:", bookingErr);
+//       throw new Error(`Database error: ${bookingErr.message}`);
+//     }
+
+//     console.log("📋 Found booking:", booking ? booking._id : "None");
+
+//     if (!booking) {
+//       console.log("⚠️ No ongoing booking found");
+//       return res.status(404).json({ message: 'No ongoing booking found' });
+//     }
+
+//     // Manually fetch customer using the fixed User import
+//     let customer = null;
+//     if (booking.userId) {
+//       try {
+//         console.log("🔍 Looking up customer with userId:", booking.userId);
+//         customer = await User.findById(booking.userId);
+//         console.log("👤 Customer lookup result:", customer ? `Found: ${customer.name || customer.phone || customer._id}` : "Not found");
+//       } catch (userErr) {
+//         console.log("⚠️ Error fetching customer:", userErr.message);
+//         // Continue without customer data - this is not critical
+//         customer = null;
+//       }
+//     } else {
+//       console.log("ℹ️ No userId in booking, skipping customer lookup");
+//     }
+
+//     const bookingObj = booking.toObject();
+//     if (customer) {
+//       bookingObj.customer = customer;
+//     }
+
+//     console.log("✅ Returning ongoing booking with data:", {
+//       bookingId: bookingObj._id,
+//       status: bookingObj.status,
+//       hasCustomer: !!customer,
+//       rider: bookingObj.rider
+//     });
+    
+//     res.json(bookingObj);
+//   } catch (err) {
+//     console.error("❌ Error in getOngoingBookingForRider:", err);
+//     res.status(500).json({ message: err.message, error: "Internal server error" });
+//   }
+// };
+
+
 exports.getOngoingBookingForRider = async (req, res) => {
   try {
     const { riderId, phone } = req.query;
@@ -1044,15 +1129,13 @@ exports.getOngoingBookingForRider = async (req, res) => {
 
     console.log("🔍 Searching for ongoing booking with query:", riderQuery);
 
-    // Find ongoing booking with better error handling
+    // Find ongoing booking with better status filtering
     let booking;
     try {
       booking = await Booking.findOne({
         ...riderQuery,
-        $or: [
-          { status: { $in: ['accepted', 'in_progress'] } },
-        ]
-      });
+        status: { $in: ['accepted', 'in_progress', 'picked_up', 'on_way'] }
+      }).populate('userId', 'name phone email'); // Populate customer data directly
     } catch (bookingErr) {
       console.error("❌ Database error while searching for booking:", bookingErr);
       throw new Error(`Database error: ${bookingErr.message}`);
@@ -1065,31 +1148,46 @@ exports.getOngoingBookingForRider = async (req, res) => {
       return res.status(404).json({ message: 'No ongoing booking found' });
     }
 
-    // Manually fetch customer using the fixed User import
-    let customer = null;
-    if (booking.userId) {
+    // Create response object with customer data
+    const bookingObj = booking.toObject();
+    
+    // If userId is populated, use it as customer, otherwise try manual lookup
+    if (booking.userId && typeof booking.userId === 'object') {
+      bookingObj.customer = booking.userId;
+      console.log("✅ Customer data populated from userId:", {
+        name: booking.userId.name,
+        phone: booking.userId.phone
+      });
+    } else if (booking.userId) {
+      // Manual lookup if population didn't work
       try {
-        console.log("🔍 Looking up customer with userId:", booking.userId);
-        customer = await User.findById(booking.userId);
-        console.log("👤 Customer lookup result:", customer ? `Found: ${customer.name || customer.phone || customer._id}` : "Not found");
+        console.log("🔍 Manual lookup for customer with userId:", booking.userId);
+        const customer = await User.findById(booking.userId);
+        if (customer) {
+          bookingObj.customer = customer;
+          console.log("👤 Manual customer lookup success:", {
+            name: customer.name,
+            phone: customer.phone
+          });
+        } else {
+          console.log("⚠️ Customer not found in manual lookup");
+          bookingObj.customer = null;
+        }
       } catch (userErr) {
-        console.log("⚠️ Error fetching customer:", userErr.message);
-        // Continue without customer data - this is not critical
-        customer = null;
+        console.log("⚠️ Error in manual customer lookup:", userErr.message);
+        bookingObj.customer = null;
       }
     } else {
       console.log("ℹ️ No userId in booking, skipping customer lookup");
-    }
-
-    const bookingObj = booking.toObject();
-    if (customer) {
-      bookingObj.customer = customer;
+      bookingObj.customer = null;
     }
 
     console.log("✅ Returning ongoing booking with data:", {
       bookingId: bookingObj._id,
       status: bookingObj.status,
-      hasCustomer: !!customer,
+      hasCustomer: !!bookingObj.customer,
+      customerName: bookingObj.customer?.name || 'No name',
+      customerPhone: bookingObj.customer?.phone || 'No phone',
       rider: bookingObj.rider
     });
     
@@ -1099,6 +1197,7 @@ exports.getOngoingBookingForRider = async (req, res) => {
     res.status(500).json({ message: err.message, error: "Internal server error" });
   }
 };
+
 
 // Get booking details with rider details
 exports.getBookingWithRiderDetails = async (req, res) => {
